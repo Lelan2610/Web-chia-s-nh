@@ -1,59 +1,78 @@
 import streamlit as st
-import os
-from PIL import Image
 import json
+import os
+from datetime import datetime
+import uuid
 
-# Tạo thư mục lưu ảnh nếu chưa có
-if not os.path.exists("images"):
-    os.makedirs("images")
+USER_DATA_FILE = "data/user_data.json"
+COMMENTS_FILE = "data/comments.json"
 
-COMMENTS_FILE = "comments.json"
+# Tải dữ liệu
+def load_json(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return {}
 
-# Tạo file comments.json nếu chưa có
-if not os.path.exists(COMMENTS_FILE):
-    with open(COMMENTS_FILE, "w") as f:
-        json.dump({}, f)
+def save_json(data, file_path):
+    with open(file_path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)
 
-# Load dữ liệu bình luận
-with open(COMMENTS_FILE, "r") as f:
-    comments = json.load(f)
+def main():
+    st.title("Web ảnh nhóm bạn thân")
 
-def save_comment(image_name, user_comment):
-    if image_name not in comments:
-        comments[image_name] = []
-    comments[image_name].append(user_comment)
-    with open(COMMENTS_FILE, "w") as f:
-        json.dump(comments, f, ensure_ascii=False, indent=2)
+    st.sidebar.header("Chọn thành viên trong nhóm")
+    user_data = load_json(USER_DATA_FILE)
+    comments = load_json(COMMENTS_FILE)
 
-def show_comments(image_name):
-    if image_name in comments:
-        st.markdown("**Bình luận:**")
-        for cmt in comments[image_name]:
-            st.write(f"- {cmt}")
+    usernames = list(user_data.keys())
+    selected_user = st.sidebar.selectbox("Thành viên", usernames)
 
-st.title("Cộng đồng chia sẻ ảnh")
+    st.header(f"Ảnh đặc biệt của {selected_user}")
+    
+    # Giao diện tải ảnh
+    uploaded_image = st.file_uploader("Tải ảnh lên", type=["png", "jpg", "jpeg"])
+    if st.button("Đăng ảnh") and uploaded_image:
+        image_id = str(uuid.uuid4())
+        file_path = f"data/{image_id}.jpg"
+        with open(file_path, "wb") as f:
+            f.write(uploaded_image.read())
+        new_entry = {
+            "image_id": image_id,
+            "file_path": file_path,
+            "time": datetime.now().isoformat()
+        }
+        user_data.setdefault(selected_user, []).append(new_entry)
+        save_json(user_data, USER_DATA_FILE)
+        st.success("Ảnh đã được đăng!")
 
-# Upload ảnh
-uploaded_file = st.file_uploader("Tải ảnh lên", type=["png", "jpg", "jpeg"])
-if uploaded_file:
-    image_path = os.path.join("images", uploaded_file.name)
-    with open(image_path, "wb") as f:
-        f.write(uploaded_file.read())
-    st.success("Tải lên thành công!")
+    # Hiển thị ảnh + phần bình luận
+    if selected_user in user_data:
+        for photo in reversed(user_data[selected_user]):
+            st.image(photo["file_path"], width=400, caption=f"Đăng lúc: {photo['time'][:19].replace('T', ' ')}")
 
-# Hiển thị tất cả ảnh
-image_files = os.listdir("images")
-for img_file in image_files:
-    img_path = os.path.join("images", img_file)
-    st.image(Image.open(img_path), caption=img_file, use_column_width=True)
+            # Hiển thị bình luận
+            st.subheader("Bình luận")
+            photo_comments = comments.get(photo["image_id"], [])
+            for c in photo_comments:
+                st.markdown(f"**{c['name']}** ({c['time'][:19].replace('T', ' ')}): {c['comment']}")
 
-    # Hiển thị bình luận
-    show_comments(img_file)
+            # Gửi bình luận mới
+            st.markdown("---")
+            with st.form(f"comment_form_{photo['image_id']}"):
+                name = st.text_input("Tên", key=f"name_{photo['image_id']}")
+                comment_text = st.text_area("Viết bình luận", key=f"comment_{photo['image_id']}")
+                submitted = st.form_submit_button("Gửi bình luận")
+                if submitted and name and comment_text:
+                    new_comment = {
+                        "name": name,
+                        "comment": comment_text,
+                        "time": datetime.now().isoformat()
+                    }
+                    comments.setdefault(photo["image_id"], []).append(new_comment)
+                    save_json(comments, COMMENTS_FILE)
+                    st.success("Đã gửi bình luận!")
+                    st.experimental_rerun()
 
-    # Nhập bình luận
-    with st.form(key=img_file):
-        user_cmt = st.text_input("Bình luận về ảnh này:", key=f"cmt_{img_file}")
-        submit = st.form_submit_button("Gửi bình luận")
-        if submit and user_cmt:
-            save_comment(img_file, user_cmt)
-            st.success("Đã gửi bình luận!")
+if __name__ == "__main__":
+    main()
