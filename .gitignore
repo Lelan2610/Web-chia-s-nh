@@ -1,0 +1,6 @@
+# Bỏ qua các tệp không cần thiết
+__pycache__/
+images/
+comments.json
+.env
+*.pyc
